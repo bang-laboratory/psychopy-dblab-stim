@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+
+import numpy as np
+from psychopy.event import Mouse
+from psychopy.visual import Window
+from psychopy.visual.basevisual import (
+    BaseVisualStim,
+    ColorMixin,
+    ContainerMixin,
+    DraggingMixin,
+    # WindowMixin,
+)
+from psychopy.visual.circle import Circle
+from psychopy.visual.shape import ShapeStim
+
+
+class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
+    """Combined visual stimulus and mouse input
+
+    Shows a thick circular outline and records "mouse" positions to emulate
+    drawing. Intended to use with a wacom tablet.
+
+    TODO(performance): The vertices for each segment is a numpy ndarray (good)
+    but they are stored in a bunch of native python lists (bad for
+    cache-locality at least)
+
+    """
+
+    def __init__(
+        self,
+        win: Window,
+        mouse: Mouse,
+        max_drawing_segments: int,
+        max_drawing_samples: int,
+        radius=8,
+        fillColor="black",
+        backgroundColor="grey",
+        circleWidth=4,
+        lineWidth=3,
+        lineColor="white",
+        # radius=0.5,
+        # edges="circle",
+        # units="",
+        # lineWidth=1.5,
+        # lineColor=None,
+        # colorSpace="rgb",
+        # pos=(0, 0),
+        # size=1.0,
+        # anchor=None,
+        # ori=0.0,
+        # opacity=None,
+        # contrast=1.0,
+        # depth=0,
+        # interpolate=True,
+        # draggable=False,
+        # name=None,
+        # autoLog=None,
+        # autoDraw=False,
+        # # legacy
+        # lineRGB=undefined,
+        # fillRGB=undefined,
+        # color=undefined,
+        # fillColorSpace=undefined,
+        # lineColorSpace=undefined,
+    ):
+
+        # TODO: does it make sense to preallocate everything?
+
+        self.win = win
+        self.mouse = mouse
+
+        self.max_drawing_segments = max_drawing_segments
+        self.max_drawing_samples = max_drawing_samples
+        self.radius = radius
+        self.fillColor = fillColor
+        self.backgroundColor = backgroundColor
+        self.circleWidth = circleWidth
+        self.lineWidth = lineWidth
+        self.lineColor = lineColor
+
+        self.inner_circle = Circle(win, radius=radius, fillColor=backgroundColor)
+        self.outer_circle = Circle(
+            win, radius=radius + circleWidth, fillColor=fillColor
+        )
+        self.drawing = [
+            ShapeStim(win, closeShape=False, lineWidth=lineWidth, lineColor=lineColor)
+            for _ in range(self.max_drawing_segments)
+        ]
+
+        self.drawing_vertices = None
+        self.reset_drawing(return_drawing=False)
+
+    def handle_record_mouse(self):
+        if self.mouse.getPressed()[0]:
+            if not self.in_ongoing_line:
+                self.in_ongoing_line = True
+
+            self.drawing_vertices[self.drawing_segments_count][
+                self.drawing_samples_count[self.drawing_segments_count], :
+            ] = self.mouse.getPos()
+            self.drawing_samples_count[self.drawing_segments_count] += 1
+        else:
+            if self.in_ongoing_line:
+                # end the line
+                self.in_ongoing_line = False
+                self.drawing_segments_count += 1
+
+    def reset_drawing(self, return_drawing: bool = True) -> list[np.ndarray] | None:
+        if return_drawing:
+            retval = self.drawing_vertices
+        else:
+            retval = None
+
+        # preallocate vertice buffers
+        self.drawing_vertices = [
+            np.zeros((self.max_drawing_samples, 2))
+            for _ in range(self.max_drawing_segments)
+        ]
+
+        # internal state
+        self.drawing_samples_count = [0 for _ in range(self.max_drawing_segments)]
+        self.drawing_segments_count = 0
+        self.in_ongoing_line = False
+
+        return retval
+
+    def draw(self, win=None, keepMatrix=False):
+        self.outer_circle.draw(win, keepMatrix)
+        self.inner_circle.draw(win, keepMatrix)
+        self.handle_record_mouse()
+        # count+1 here in order to draw ongoing, non-finalized lines
+        for segment in range(self.drawing_segments_count + 1):
+            if self.drawing_samples_count[segment] > 0:
+                self.drawing[segment].vertices = self.drawing_vertices[segment][
+                    : self.drawing_samples_count[segment],
+                ]
+                self.drawing[segment].draw(win, keepMatrix)
+            else:
+                break
