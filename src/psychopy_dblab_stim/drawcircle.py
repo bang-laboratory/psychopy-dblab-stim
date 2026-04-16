@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+from typing import Generator
+
 import numpy as np
+from psychopy.core import Clock
 from psychopy.event import Mouse
 from psychopy.visual import Window
 from psychopy.visual.basevisual import (
@@ -24,20 +27,28 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
     but they are stored in a bunch of native python lists (bad for
     cache-locality at least)
 
+    FIXME(performance): It could still be 1 vertice buffer with the segments
+    just indexing in to it
+
+    TODO(performance): does it even make sense to preallocate everything?
     """
 
     def __init__(
         self,
         win: Window,
         mouse: Mouse,
+        clock: Clock,
         max_drawing_segments: int,
         max_drawing_samples: int,
-        radius=8,
+        radius=4,
         fillColor="black",
         backgroundColor="grey",
-        circleWidth=4,
+        circleWidth=7,
         lineWidth=3,
         lineColor="white",
+        #
+        # unused/unpassed args to Circle():
+        #
         # radius=0.5,
         # edges="circle",
         # units="",
@@ -64,10 +75,9 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         # lineColorSpace=undefined,
     ):
 
-        # TODO: does it make sense to preallocate everything?
-
-        self.win = win
-        self.mouse = mouse
+        self.win: Window = win
+        self.mouse: Mouse = mouse
+        self.clock: Clock = clock
 
         self.max_drawing_segments = max_drawing_segments
         self.max_drawing_samples = max_drawing_samples
@@ -87,7 +97,6 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
             for _ in range(self.max_drawing_segments)
         ]
 
-        self.drawing_vertices = None
         self.reset_drawing(return_drawing=False)
 
     def handle_record_mouse(self):
@@ -98,6 +107,9 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
             self.drawing_vertices[self.drawing_segments_count][
                 self.drawing_samples_count[self.drawing_segments_count], :
             ] = self.mouse.getPos()
+            self.drawing_times[self.drawing_segments_count][
+                self.drawing_samples_count[self.drawing_segments_count]
+            ] = self.clock.getTime()
             self.drawing_samples_count[self.drawing_segments_count] += 1
         else:
             if self.in_ongoing_line:
@@ -105,9 +117,16 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
                 self.in_ongoing_line = False
                 self.drawing_segments_count += 1
 
-    def reset_drawing(self, return_drawing: bool = True) -> list[np.ndarray] | None:
+    def has_samples(self) -> bool:
+        return self.drawing_samples_count[0] != 0
+
+    def reset_drawing(
+        self, return_drawing: bool = True
+    ) -> list[tuple[np.ndarray, np.ndarray]] | None:
         if return_drawing:
-            retval = self.drawing_vertices
+            # explicit list here to force the generator to resolve
+            # since we want to delete the underlying data
+            retval = list(self.filter_empty_vertices_and_times())
         else:
             retval = None
 
@@ -115,6 +134,9 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         self.drawing_vertices = [
             np.zeros((self.max_drawing_samples, 2))
             for _ in range(self.max_drawing_segments)
+        ]
+        self.drawing_times = [
+            np.zeros(self.max_drawing_samples) for _ in range(self.max_drawing_segments)
         ]
 
         # internal state
@@ -124,16 +146,32 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
 
         return retval
 
+    def filter_empty_vertices(self) -> Generator[np.ndarray, None, None]:
+        # count+1 here in order to draw ongoing, non-finalized lines
+        for segment in range(self.drawing_segments_count + 1):
+            if self.drawing_samples_count[segment] > 0:
+                yield self.drawing_vertices[segment][
+                    : self.drawing_samples_count[segment]
+                ]
+            else:
+                # stop looking after we found 1 empty segment
+                # since they are always filled from 0
+                break
+
+    def filter_empty_vertices_and_times(
+        self,
+    ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+        """Helper function for iterating over both verts and times in tandem"""
+        for segment, vertice in enumerate(self.filter_empty_vertices()):
+            yield (
+                vertice,
+                self.drawing_times[segment][: self.drawing_samples_count[segment]],
+            )
+
     def draw(self, win=None, keepMatrix=False):
         self.outer_circle.draw(win, keepMatrix)
         self.inner_circle.draw(win, keepMatrix)
         self.handle_record_mouse()
-        # count+1 here in order to draw ongoing, non-finalized lines
-        for segment in range(self.drawing_segments_count + 1):
-            if self.drawing_samples_count[segment] > 0:
-                self.drawing[segment].vertices = self.drawing_vertices[segment][
-                    : self.drawing_samples_count[segment],
-                ]
-                self.drawing[segment].draw(win, keepMatrix)
-            else:
-                break
+        for segment, drawing_vertices in enumerate(self.filter_empty_vertices()):
+            self.drawing[segment].vertices = drawing_vertices
+            self.drawing[segment].draw(win, keepMatrix)
