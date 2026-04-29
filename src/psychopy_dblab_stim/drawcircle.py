@@ -17,6 +17,10 @@ from psychopy.visual.circle import Circle
 from psychopy.visual.shape import ShapeStim
 
 
+def calc_angle_from_pos(coords: tuple, origin: tuple = (0, 0)) -> float:
+    return np.arctan2(coords[0] - origin[0], coords[0] - origin[0])
+
+
 class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
     """Combined visual stimulus and mouse input
 
@@ -104,12 +108,14 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
             if not self.in_ongoing_line:
                 self.in_ongoing_line = True
 
-            self.drawing_vertices[self.drawing_segments_count][
-                self.drawing_samples_count[self.drawing_segments_count], :
-            ] = self.mouse.getPos()
+            pos = self.mouse.getPos()
             self.drawing_times[self.drawing_segments_count][
                 self.drawing_samples_count[self.drawing_segments_count]
             ] = self.clock.getTime()
+            self.drawing_vertices[self.drawing_segments_count][
+                self.drawing_samples_count[self.drawing_segments_count], :
+            ] = pos
+            self._calc_rotation_progress(pos)
             self.drawing_samples_count[self.drawing_segments_count] += 1
         else:
             if self.in_ongoing_line:
@@ -120,9 +126,44 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
     def has_samples(self) -> bool:
         return self.drawing_samples_count[0] != 0
 
+    def _calc_rotation_progress(self, pos: tuple):
+        current_rotation = np.atan2(*pos)
+        self.rotation_progress[self.drawing_segments_count][
+            self.drawing_samples_count[self.drawing_segments_count]
+        ] = current_rotation
+        # initial_rotation = self.rotation_progress[self.drawing_segments_count][0]
+
+    def count_rotations(self):
+        """FIXME: performance when called every frame"""
+        self.rotation_progress_percent = [
+            [
+                ((x + np.pi) / (2 * np.pi)) % 1
+                for x in self.rotation_progress[segment]
+                if x != 0
+            ]
+            for segment in range(self.drawing_segments_count + 1)
+        ]
+        self.derivative = [
+            [
+                b - a
+                if (b - a) < 0.5 and (a - b) < 0.5
+                else -1 + (b - a) % 1
+                if b > a
+                else (b - a) % 1
+                for a, b in zip(
+                    self.rotation_progress_percent[segment][:-1],
+                    self.rotation_progress_percent[segment][1:],
+                )
+            ]
+            for segment in range(self.drawing_segments_count + 1)
+        ]
+        self.segment_lengths = [sum(segment) for segment in self.derivative]
+        # print(f"{self.segment_lengths=}")
+        return self.segment_lengths
+
     def reset_drawing(
         self, return_drawing: bool = True
-    ) -> list[tuple[np.ndarray, np.ndarray]] | None:
+    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None:
         if return_drawing:
             # explicit list here to force the generator to resolve
             # since we want to delete the underlying data
@@ -136,6 +177,10 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
             for _ in range(self.max_drawing_segments)
         ]
         self.drawing_times = [
+            np.zeros(self.max_drawing_samples) for _ in range(self.max_drawing_segments)
+        ]
+
+        self.rotation_progress = [
             np.zeros(self.max_drawing_samples) for _ in range(self.max_drawing_segments)
         ]
 
@@ -160,12 +205,13 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
 
     def filter_empty_vertices_and_times(
         self,
-    ) -> Generator[tuple[np.ndarray, np.ndarray], None, None]:
+    ) -> Generator[tuple[np.ndarray, np.ndarray, np.ndarray], None, None]:
         """Helper function for iterating over both verts and times in tandem"""
         for segment, vertice in enumerate(self.filter_empty_vertices()):
             yield (
                 vertice,
                 self.drawing_times[segment][: self.drawing_samples_count[segment]],
+                self.rotation_progress[segment][: self.drawing_samples_count[segment]],
             )
 
     def draw(self, win=None, keepMatrix=False):
