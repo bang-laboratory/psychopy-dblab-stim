@@ -17,8 +17,8 @@ from psychopy.visual.basevisual import (
 from psychopy.visual.circle import Circle
 from psychopy.visual.shape import ShapeStim
 
-print("Imported drawcircle")
-logging.console.setLevel(logging.DEBUG)
+# print("Imported drawcircle")
+# logging.console.setLevel(logging.DEBUG)
 
 
 def calc_angle_from_pos(coords: tuple, origin: tuple = (0, 0)) -> float:
@@ -83,7 +83,7 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         # lineColorSpace=undefined,
     ):
 
-        print("Entering DrawCircle.__init__")
+        # print("Entering DrawCircle.__init__")
         self.win: Window = win
         self.mouse: Mouse = mouse
         self.clock: Clock = clock
@@ -97,7 +97,7 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         self.lineWidth = lineWidth
         self.lineColor = lineColor
 
-        print("Basic setup for DrawCircle.__init__")
+        # print("Basic setup for DrawCircle.__init__")
 
         self.inner_circle = Circle(win, radius=radius, fillColor=backgroundColor)
         self.outer_circle = Circle(
@@ -109,7 +109,7 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         ]
 
         self.reset_drawing(return_drawing=False)
-        print("Exiting DrawCircle.__init__")
+        # print("Exiting DrawCircle.__init__")
 
     def handle_record_mouse(self):
         if self.mouse.getPressed()[0]:
