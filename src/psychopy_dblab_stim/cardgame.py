@@ -30,11 +30,13 @@ class CardStimulus(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
             win,
             size=(aspect_ratio[0] * card_size, aspect_ratio[1] * card_size),
             pos=(-margin / 2, 0),  # units=win.units
+            name="Left card",
         )
         self.right_stim = ImageStim(
             win,
             size=(aspect_ratio[0] * card_size, aspect_ratio[1] * card_size),
             pos=(margin / 2, 0),  # units=win.units
+            name="Right card",
         )
 
     def draw(self):
