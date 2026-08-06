@@ -18,24 +18,26 @@ class CardStimulus(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         self,
         win,
         card_size: float = 5,
-        margin: float = 5,
+        offset_left: tuple[float, float] = (-5, 0),
+        offset_right: tuple[float, float] = (5, 0),
         aspect_ratio: tuple[float, float] = (0.6543561, 1),
     ):
         self.win: Window = win
         self.card_size = card_size
-        self.margin = margin
+        self.offset_left = offset_left
+        self.offset_right = offset_right
         self.aspect_ratio = aspect_ratio
 
         self.left_stim = ImageStim(
             win,
             size=(aspect_ratio[0] * card_size, aspect_ratio[1] * card_size),
-            pos=(-margin / 2, 0),  # units=win.units
+            pos=offset_left,  # units=win.units
             name="Left card",
         )
         self.right_stim = ImageStim(
             win,
             size=(aspect_ratio[0] * card_size, aspect_ratio[1] * card_size),
-            pos=(margin / 2, 0),  # units=win.units
+            pos=offset_right,  # units=win.units
             name="Right card",
         )
 
