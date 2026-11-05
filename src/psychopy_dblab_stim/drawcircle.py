@@ -134,6 +134,18 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
     def has_samples(self) -> bool:
         return self.drawing_samples_count[0] != 0
 
+    def drawing_correct_direction(self, desired_direction: str) -> bool:
+        if self.drawing_samples_count[self.drawing_segments_count] < 2:
+            return False  # not enough samples to determine direction
+        self.count_rotations()
+        match desired_direction:
+            case "clockwise":
+                return self.derivative[-1][-1] > 0
+            case "counterclockwise":
+                return self.derivative[-1][-1] < 0
+            case _:
+                raise KeyError
+
     def _calc_rotation_progress(self, pos: tuple):
         current_rotation = np.atan2(*pos)
         self.rotation_progress[self.drawing_segments_count][
