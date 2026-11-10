@@ -46,8 +46,6 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         win: Window,
         mouse: Mouse,
         clock: Clock,
-        max_drawing_segments: int,
-        max_drawing_samples: int,
         radius=4,
         fillColor="black",
         backgroundColor="grey",
@@ -88,8 +86,6 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         self.mouse: Mouse = mouse
         self.clock: Clock = clock
 
-        self.max_drawing_segments = max_drawing_segments
-        self.max_drawing_samples = max_drawing_samples
         self.radius = radius
         self.fillColor = fillColor
         self.backgroundColor = backgroundColor
@@ -103,141 +99,116 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         self.outer_circle = Circle(
             win, radius=radius + circleWidth, fillColor=fillColor
         )
-        self.drawing = [
-            ShapeStim(win, closeShape=False, lineWidth=lineWidth, lineColor=lineColor)
-            for _ in range(self.max_drawing_segments)
-        ]
 
-        self.reset_drawing(return_drawing=False)
+        self.reset_drawing()
         # print("Exiting DrawCircle.__init__")
 
     def handle_record_mouse(self):
         if self.mouse.getPressed()[0]:
             if not self.in_ongoing_line:
                 self.in_ongoing_line = True
-
+                self.drawing_vertices.append(GrowablePoints())
+                self.segments_stim.append(
+                    ShapeStim(
+                        self.win,
+                        closeShape=False,
+                        lineWidth=self.__dict__["borderWidth"],
+                        lineColor=self.lineColor,
+                    )
+                )
             pos = self.mouse.getPos()
-            self.drawing_times[self.drawing_segments_count][
-                self.drawing_samples_count[self.drawing_segments_count]
-            ] = self.clock.getTime()
-            self.drawing_vertices[self.drawing_segments_count][
-                self.drawing_samples_count[self.drawing_segments_count], :
-            ] = pos
-            self._calc_rotation_progress(pos)
-            self.drawing_samples_count[self.drawing_segments_count] += 1
+            rotation = np.atan2(*pos)
+            self.drawing_vertices[-1].append(
+                (
+                    *pos,  # idx 0,1
+                    self.clock.getTime(),  # idx 2
+                    rotation,  # idx 3
+                    self._calc_rotation_progress(rotation),  # idx 4
+                )
+            )
         else:
             if self.in_ongoing_line:
-                # end the line
                 self.in_ongoing_line = False
-                self.drawing_segments_count += 1
+
+    def _calc_rotation_progress(self, new_rotation: tuple) -> float | None:
+        current_segment = self.drawing_vertices[-1]
+        if len(current_segment) > 0:
+            prev_rotation = current_segment[-1, 3]
+            return (prev_rotation - new_rotation + np.pi) % (2 * np.pi) - np.pi
 
     def has_samples(self) -> bool:
-        return self.drawing_samples_count[0] != 0
+        return (len(self.drawing_vertices) > 0) and (len(self.drawing_vertices[0]) > 0)
 
     def drawing_correct_direction(self, desired_direction: str) -> bool:
-        if self.drawing_samples_count[self.drawing_segments_count] < 2:
+        if len(self.drawing_vertices[-1]) < 2:
             return False  # not enough samples to determine direction
-        self.count_rotations()
         match desired_direction:
             case "clockwise":
-                return self.derivative[-1][-1] > 0
+                return self.drawing_vertices[-1][-1, 4] > 0
             case "counterclockwise":
-                return self.derivative[-1][-1] < 0
+                return self.drawing_vertices[-1][-1, 4] < 0
             case _:
                 raise KeyError
 
-    def _calc_rotation_progress(self, pos: tuple):
-        current_rotation = np.atan2(*pos)
-        self.rotation_progress[self.drawing_segments_count][
-            self.drawing_samples_count[self.drawing_segments_count]
-        ] = current_rotation
-        # initial_rotation = self.rotation_progress[self.drawing_segments_count][0]
-
-    def count_rotations(self):
-        """FIXME: performance when called every frame"""
-        self.rotation_progress_percent = [
-            [
-                ((x + np.pi) / (2 * np.pi)) % 1
-                for x in self.rotation_progress[segment]
-                if x != 0
-            ]
-            for segment in range(self.drawing_segments_count + 1)
-        ]
-        self.derivative = [
-            [
-                b - a
-                if (b - a) < 0.5 and (a - b) < 0.5
-                else -1 + (b - a) % 1
-                if b > a
-                else (b - a) % 1
-                for a, b in zip(
-                    self.rotation_progress_percent[segment][:-1],
-                    self.rotation_progress_percent[segment][1:],
-                )
-            ]
-            for segment in range(self.drawing_segments_count + 1)
-        ]
-        self.segment_lengths = [sum(segment) for segment in self.derivative]
-        # print(f"{self.segment_lengths=}")
-        return self.segment_lengths
-
     def reset_drawing(
-        self, return_drawing: bool = True
-    ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None:
-        if return_drawing:
-            # explicit list here to force the generator to resolve
-            # since we want to delete the underlying data
-            retval = list(self.filter_empty_vertices_and_times())
-        else:
-            retval = None
+        self,
+    ):
 
-        # preallocate vertice buffers
-        self.drawing_vertices = [
-            np.zeros((self.max_drawing_samples, 2))
-            for _ in range(self.max_drawing_segments)
-        ]
-        self.drawing_times = [
-            np.zeros(self.max_drawing_samples) for _ in range(self.max_drawing_segments)
-        ]
+        # reset vertice buffers
+        self.drawing_vertices = []
+        self.segments_stim = []
 
-        self.rotation_progress = [
-            np.zeros(self.max_drawing_samples) for _ in range(self.max_drawing_segments)
-        ]
-
-        # internal state
-        self.drawing_samples_count = [0 for _ in range(self.max_drawing_segments)]
-        self.drawing_segments_count = 0
         self.in_ongoing_line = False
 
-        return retval
-
-    def filter_empty_vertices(self) -> Generator[np.ndarray, None, None]:
-        # count+1 here in order to draw ongoing, non-finalized lines
-        for segment in range(self.drawing_segments_count + 1):
-            if self.drawing_samples_count[segment] > 0:
-                yield self.drawing_vertices[segment][
-                    : self.drawing_samples_count[segment]
-                ]
-            else:
-                # stop looking after we found 1 empty segment
-                # since they are always filled from 0
-                break
-
-    def filter_empty_vertices_and_times(
-        self,
-    ) -> Generator[tuple[np.ndarray, np.ndarray, np.ndarray], None, None]:
-        """Helper function for iterating over both verts and times in tandem"""
-        for segment, vertice in enumerate(self.filter_empty_vertices()):
-            yield (
-                vertice,
-                self.drawing_times[segment][: self.drawing_samples_count[segment]],
-                self.rotation_progress[segment][: self.drawing_samples_count[segment]],
-            )
-
     def draw(self, win=None, keepMatrix=False):
+        """once-per-frame tick, handles both drawing stimuli to screen and recording of drawing input
+
+        NOTE: must be called every frame
+        """
         self.outer_circle.draw(win, keepMatrix)
         self.inner_circle.draw(win, keepMatrix)
         self.handle_record_mouse()
-        for segment, drawing_vertices in enumerate(self.filter_empty_vertices()):
-            self.drawing[segment].vertices = drawing_vertices
-            self.drawing[segment].draw(win, keepMatrix)
+        if len(self.segments_stim) > 0:
+            self.segments_stim[-1].vertices = self.drawing_vertices[-1][:, 0:2]
+            for stim in self.segments_stim:
+                stim.draw(win, keepMatrix)
+
+
+class GrowablePoints:
+    """Extendable numpy array with preallocations start with *capacity* elements
+    allocated, when the user tries to set an item with a higher index than
+    already allocated, double the size.
+    """
+
+    __slots__ = ("_buf", "_n")
+
+    def __init__(self, capacity=64, cols=5, dtype=np.float64):
+        self._buf = np.zeros((capacity, cols), dtype)
+        self._n = 0
+
+    def __setitem__(self, i, value):
+        assert not isinstance(i, slice), "Slice assignments not supported"
+        if i >= len(self._buf):  # geometric grow
+            self._grow(max(i + 1, len(self._buf) * 2))
+        if i >= self._n:
+            self._n = i + 1
+        self._buf[i] = value
+
+    def _grow(self, cap):
+        logger.debug(f"GROWING from {self._n} to {cap}")
+        new = np.zeros((cap, self._buf.shape[1]), self._buf.dtype)
+        new[: len(self._buf)] = self._buf
+        self._buf = new
+
+    @property
+    def view(self):  # zero-copy valid region
+        return self._buf[: self._n]
+
+    def __getitem__(self, i):
+        return self.view[i]
+
+    def __len__(self):
+        return self._n
+
+    def append(self, value):
+        self[self._n] = value
