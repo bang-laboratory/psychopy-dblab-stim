@@ -116,6 +116,17 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
                         lineColor=self.lineColor,
                     )
                 )
+            elif len(self.drawing_vertices) == 0:
+                self.drawing_vertices.append(GrowablePoints())
+                self.segments_stim.append(
+                    ShapeStim(
+                        self.win,
+                        closeShape=False,
+                        lineWidth=self.__dict__["borderWidth"],
+                        lineColor=self.lineColor,
+                    )
+                )
+
             pos = self.mouse.getPos()
             rotation = np.atan2(*pos)
             self.drawing_vertices[-1].append(
