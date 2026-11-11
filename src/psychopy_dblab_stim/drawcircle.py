@@ -189,9 +189,9 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
 
 
 class GrowablePoints:
-    """Extendable numpy array with preallocations start with *capacity* elements
-    allocated, when the user tries to set an item with a higher index than
-    already allocated, double the size.
+    """Extendable numpy array with preallocation starting with *capacity*
+    elements allocated. When the user tries to set an item with a higher index
+    than already allocated, double the size.
     """
 
     __slots__ = ("_buf", "_n")
