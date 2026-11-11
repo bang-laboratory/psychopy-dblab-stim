@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import base64
+import io
+import sys
 from typing import Generator
 
 import numpy as np
@@ -223,3 +226,14 @@ class GrowablePoints:
 
     def append(self, value):
         self[self._n] = value
+
+
+def serialise_segment_list(segments: list[GrowablePoints]) -> str:
+    buf = io.BytesIO()
+    np.savez(buf, *(segment.view for segment in segments))
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def deserialise_segment_list(str_) -> list[np.ndarray]:
+    z = np.load(io.BytesIO(base64.b64decode(str_)))
+    return [z[name] for name in z.files]
