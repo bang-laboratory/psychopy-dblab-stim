@@ -148,7 +148,7 @@ class DrawingCircle(BaseVisualStim, DraggingMixin, ColorMixin, ContainerMixin):
         current_segment = self.drawing_vertices[-1]
         if len(current_segment) > 0:
             prev_rotation = current_segment[-1, 3]
-            return (prev_rotation - new_rotation + np.pi) % (2 * np.pi) - np.pi
+            return (new_rotation - prev_rotation + np.pi) % (2 * np.pi) - np.pi
 
     def has_samples(self) -> bool:
         return (len(self.drawing_vertices) > 0) and (len(self.drawing_vertices[0]) > 0)
